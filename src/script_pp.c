@@ -5,25 +5,15 @@
 #include <string.h>
 
 #include "poketools.h"
+#include "hexdump.h"
 #include "formats/script.h"
 
-#define COMMENT_FMT "\x1B[38;5;243m"
-#define END_FMT     "\x1B[m"
-
-
-/** SGR string to format the byte `v`. */
-const char *format_of(int v) {
-  return v == 0x00? "38;5;238"
-       : v == 0xFF? "38;5;194"
-       : v <  0x20? "38;5;150"
-       : v >= 0x7F? "38;5;141"
-       :            "";
-}
-
+#define FMT_COMMENT "\x1B[38;5;243m"
+#define FMT_END     "\x1B[m"
 
 /** Prints a (comment) line explaining an instruction operand. */
 void print_argument_comment(u16 op, u32 *p, int i, int j, int n, struct debug_block *debug) {
-  #define CODE_DELTA(d) ((i - 1)*4 + (int)(d))
+  #define CODE_DELTA(d) ((i - 2)*4 + (int)(d))
   #define PRINT_CODE_DELTA(d) printf("%+4d words (= %04x)", (int)(d)/4, CODE_DELTA(d));
   u32 v = p[i];
 
@@ -65,11 +55,11 @@ void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
 
   static u16 curr_op, curr_nargs = 0, curr_remaining = 0;
 
-  printf(COMMENT_FMT "  ; ");
+  printf(FMT_COMMENT "  ; ");
   if (curr_remaining > 0) {
     print_argument_comment(curr_op, p, i, curr_nargs - curr_remaining, curr_nargs, debug);
     curr_remaining--;
-    printf(END_FMT);
+    printf(FMT_END);
     return;
   }
 
@@ -77,7 +67,7 @@ void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
       lookup_var = -1,            // If not -1, lookup a variable of this type and append
       var        = SEXT(vh, 15);  // Variable to lookup (default: high halfword)
 
-  printf(END_FMT);
+  printf(FMT_END);
   switch (vl) { // These are all super WIP
     case 0x002E: printf("Func Begin");                                        break;
     case 0x0030: printf("Return\n");                                          break;
@@ -102,7 +92,7 @@ void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
     case 0x00C8: printf("CmpLocal %04hx", vh);           lookup_var = 0x0101; break;
     case 0x00C9: printf("CmpConst %04hx", vh);                                break;
   }
-  printf(COMMENT_FMT);
+  printf(FMT_COMMENT);
 
   if (nargs > 0) {
     curr_op = vl;
@@ -115,7 +105,7 @@ void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
     printf(" (%s)", sym == NULL? "N/A" : sym->name);
   }
 
-  printf(END_FMT);
+  printf(FMT_END);
 }
 
 /** Prints the given code section `code` to stdout. */
@@ -132,7 +122,7 @@ void print_code(struct code_block *code) {
     u32 v  = code->instrs[i];
     u16 vh = v >> 16,
         vl = v & 0xFFFF;
-    printf("  %04x: \x1B[%sm%04hx\x1B[m\x1B[%sm%04hx\x1B[m",
+    printf("  %04x: %s%04hx%s%04hx" FMT_END,
            i * 4, format_of(vh), vh, format_of(vl), vl);
     print_instruction_comment(code->instrs, i, NULL);
     printf("\n");
@@ -217,23 +207,23 @@ void print_debug_code(struct code_block *code, struct debug_block *debug) {
   for (int i = 0; i < code->ninstrs; i++) {
     // Print file header if new file
     while (file_i < debug->nfiles && debug->files[file_i].start <= 4*i) {
-      printf(COMMENT_FMT "\n");
+      printf(FMT_COMMENT "\n");
       for (int i = 0; i < 74; i++) putchar(';');
       putchar('\n');
-      printf(";;;; " END_FMT "%s" COMMENT_FMT " ",
+      printf(";;;; " FMT_END "%s" FMT_COMMENT " ",
              debug->files[file_i].name);
       int pad = 74 - (strlen(debug->files[file_i].name) + strlen(";;;;  "));
       if (pad < 0) pad = 0;
       for (int i = 0; i < pad; i++) putchar(';');
       putchar('\n');
       for (int i = 0; i < 74; i++) putchar(';');
-      printf("\n" END_FMT);
+      printf("\n" FMT_END);
       file_i++;
     }
 
     // Print lineno info if new lineno
     while (line_i < debug->nlinenos && debug->linenos[line_i].start <= 4*i) {
-      printf(COMMENT_FMT "; LineNo: %d" END_FMT "\n",
+      printf(FMT_COMMENT "; LineNo: %d" FMT_END "\n",
              debug->linenos[line_i].lineno);
       line_i++;
     }
@@ -241,7 +231,7 @@ void print_debug_code(struct code_block *code, struct debug_block *debug) {
     // Print any new globals
     while (global_i < nglobals && sym_globals[global_i].start <= 4*i) {
       struct debug_symbol *sym = &sym_globals[global_i];
-      printf(COMMENT_FMT "; Global: (%04hx) %s" END_FMT "\n",
+      printf(FMT_COMMENT "; Global: (%04hx) %s" FMT_END "\n",
              (u16) sym->id, sym->name);
       global_i++;
     }
@@ -249,7 +239,7 @@ void print_debug_code(struct code_block *code, struct debug_block *debug) {
     // Print out function header if appropriate
     while (function_i < nfunctions && sym_functions[function_i].start <= 4*i) {
       printf("\n");
-      printf(COMMENT_FMT ";;;; %s" END_FMT "\n",
+      printf(FMT_COMMENT ";;;; %s" FMT_END "\n",
              sym_functions[function_i].name);
       function_i++;
     }
@@ -257,7 +247,7 @@ void print_debug_code(struct code_block *code, struct debug_block *debug) {
     // Print any new locals
     while (local_i < nlocals && sym_locals[local_i].start <= 4*i) {
       struct debug_symbol *sym = &sym_locals[local_i];
-      printf(COMMENT_FMT ";   Local: (%04hx) %s" END_FMT "\n",
+      printf(FMT_COMMENT ";   Local: (%04hx) %s" FMT_END "\n",
              (u16) sym->id, sym->name);
       local_i++;
     }
@@ -266,7 +256,7 @@ void print_debug_code(struct code_block *code, struct debug_block *debug) {
     u32 v  = code->instrs[i];
     u16 vh = v >> 16,
         vl = v & 0xFFFF;
-    printf("  %04x: \x1B[%sm%04hx\x1B[m\x1B[%sm%04hx\x1B[m",
+    printf("  %04x: %s%04hx%s%04hx" FMT_END,
            i * 4, format_of(vh), vh, format_of(vl), vl);
     print_instruction_comment(code->instrs, i, debug);
     printf("\n");

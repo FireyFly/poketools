@@ -12,9 +12,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  char *filename = argv[1];
-
-  FILE *f = fopen(filename, "r");
+  FILE *f = fopen(argv[1], "r");
 
   struct code_block *code = NULL;
   struct debug_block *debug = NULL;
@@ -30,7 +28,6 @@ int main(int argc, char *argv[]) {
     if (feof(f) || ferror(f)) break;
 
     fseek(f, -8L, SEEK_CUR);
-    fprintf(stderr, "Reading: %08x @ %lx (+%x)\n", magic, ftell(f), size);
     switch (magic) {
       case 0x0A0AF1E0: code = read_code_block(f); break;
       case 0x0A0AF1EF: debug = read_debug_block(f); break;
@@ -49,9 +46,6 @@ int main(int argc, char *argv[]) {
     }
 
     fseek(f, section_start + size, SEEK_SET);
-
-    fprintf(stderr, "@ $%lx\n", ftell(f));
-
   }
 
   //-- Print code (or debug if only debug info)

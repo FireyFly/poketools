@@ -1,6 +1,6 @@
 
 .PHONY: all
-all: readscript
+all: readscript readzone
 
 .PHONY: clean
 clean:
@@ -8,7 +8,7 @@ clean:
 	rmdir obj/formats
 	rm obj/*.o
 	rmdir obj
-	rm readscript
+	rm readscript readzone
 
 
 obj:
@@ -23,5 +23,8 @@ obj/%.o: src/%.c obj
 obj/formats/%.o: src/formats/%.c obj/formats
 	$(CC) -c -g $< -o $@
 
-readscript: obj/readscript.o obj/script_pp.o obj/formats/script.o
+readscript: obj/readscript.o obj/script_pp.o obj/hexdump.o obj/formats/script.o
+	$(CC) $^ -o $@
+
+readzone: obj/readzone.o obj/script_pp.o obj/hexdump.o obj/formats/zonedata.o obj/formats/script.o
 	$(CC) $^ -o $@
