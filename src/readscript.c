@@ -8,11 +8,15 @@
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
-    fprintf(stderr, "usage: %s <filename>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
     return 1;
   }
 
   FILE *f = fopen(argv[1], "r");
+  if (f == NULL) {
+    fprintf(stderr, "Couldn't open '%s' for reading.", argv[1]);
+    return 2;
+  }
 
   struct code_block *code = NULL;
   struct debug_block *debug = NULL;

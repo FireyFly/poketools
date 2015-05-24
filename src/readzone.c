@@ -19,6 +19,10 @@ int main(int argc, char *argv[]) {
   }
 
   FILE *f = fopen(argv[1], "r");
+  if (f == NULL) {
+    fprintf(stderr, "Couldn't open '%s' for reading.", argv[1]);
+    return 2;
+  }
 
   struct zonedata *zone = read_zonedata(f);
 

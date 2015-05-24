@@ -134,6 +134,12 @@ struct debug_block *read_debug_block(FILE *f) {
     types[i] = (struct debug_type) { id, strdup(buf) };
   }
 
+  // Padding
+  for (int i = 0; i < 7; i++) {
+    u8 pad = fgetc(f);
+    assert(pad == 0);
+  }
+
   //-- Return debug struct
   struct debug_block *res = malloc(sizeof(struct debug_block));
   res->header = memdup(&hd, sizeof(struct debug_header));
