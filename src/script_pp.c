@@ -466,10 +466,16 @@ void disassemble(struct code_block *code) {
         int choices = ins[i + 1],
             base;
         // Print each choice
-        for (int j = 0; j < choices; j++) {
+        int j;
+        for (j = 0; j < choices; j++) {
           base = i + 2 + 2*j;
+          if (base + (int) ins[base]/4 - 1 >= n) break;
           sprintf(buf, "  %3d => %s", ins[base + 1], RLABEL(base - 1, base));
           disasm_line_(ins, base, 2, buf, labels);
+        }
+        if (j != choices) { // Check for broken instruction
+          instr.nargs = 0;
+          break;
         }
         // Print the fallback choice
         base = i + 2 + 2*choices;
