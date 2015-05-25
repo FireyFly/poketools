@@ -26,6 +26,8 @@ struct zonedata *read_zonedata(FILE *f) {
   res->unk1->header = malloc(sizeof(struct zone_unk1_header));
   struct zone_unk1_header *unk1_hd = res->unk1->header;
 
+  for (int i = 0; i < 3; i++) assert(unk1_hd->pad[i] == 0);
+
   section_start = ftell(f);
 
   fread(unk1_hd, sizeof(struct zone_unk1_header), 1, f);
@@ -46,15 +48,17 @@ struct zonedata *read_zonedata(FILE *f) {
   res->unk1->entry4 = malloc(sizeof(struct zone_unk1_entry_4) * unk1_hd->num_unk4);
   fread(res->unk1->entry4, sizeof(struct zone_unk1_entry_4), unk1_hd->num_unk4, f);
 
-  fread(&res->unk1->trailer, sizeof(u32), 1, f);
+  res->unk1->nentry5 = unk1_hd->num_unk5;
+  res->unk1->entry5 = malloc(sizeof(struct zone_unk1_entry_4) * unk1_hd->num_unk5);
+  fread(res->unk1->entry5, sizeof(struct zone_unk1_entry_4), unk1_hd->num_unk5, f);
 
   // Check if we read the entire section properly.
   section_end = ftell(f);
   section_size = unk1_hd->size + 4;
 
   if (section_end != section_start + section_size) {
-    fprintf(stderr, "\x1B[33mwarning: section not read properly (size delta is %ld)\x1B[m\n", 
-            section_end - (section_start + section_size));
+    fprintf(stderr, "\x1B[33mwarning: unk1 section not read properly (size delta is %ld, @ $%lx)\x1B[m\n", 
+            section_end - (section_start + section_size), ftell(f));
   }
   fseek(f, section_start + section_size, SEEK_SET);
 
@@ -70,11 +74,11 @@ struct zonedata *read_zonedata(FILE *f) {
   section_size = res->code1->header->section_size;
 
   if (section_end != section_start + section_size) {
-    fprintf(stderr, "\x1B[33mwarning: section not read properly (size delta is %ld)\x1B[m\n", 
+    fprintf(stderr, "\x1B[33mwarning: code1 section not read properly (size delta is %ld)\x1B[m\n", 
             section_end - (section_start + section_size));
   }
   fseek(f, section_start + section_size, SEEK_SET);
-  fseek(f, 4 - (ftell(f) % 4), SEEK_CUR); // Round to full word
+  fseek(f, (4 - ftell(f) % 4) % 4, SEEK_CUR); // Round to full word
 
   res->code2 = read_code_block(f);
   //*/

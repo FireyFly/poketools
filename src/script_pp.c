@@ -13,7 +13,7 @@
 
 /** Prints a (comment) line explaining an instruction operand. */
 void print_argument_comment(u16 op, u32 *p, int i, int j, int n, struct debug_block *debug) {
-  #define CODE_DELTA(d) ((i - 2)*4 + (int)(d))
+  #define CODE_DELTA(d) ((i - 1)*4 + (int)(d))
   #define PRINT_CODE_DELTA(d) printf("%+4d words (= %04x)", (int)(d)/4, CODE_DELTA(d));
   u32 v = p[i];
 
@@ -35,7 +35,7 @@ void print_argument_comment(u16 op, u32 *p, int i, int j, int n, struct debug_bl
       } else if (j % 2 == 1) {
         result = v;
       } else {
-        printf("  %4d => ", v); PRINT_CODE_DELTA(result);
+        printf("  %4d => ", v); PRINT_CODE_DELTA(result - 4);
       }
     } break;
 
@@ -77,6 +77,7 @@ void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
     case 0x0035: printf("CondJump");          nargs = 1;                      break;
     case 0x0036: printf("CondJump2");         nargs = 1;                      break;
     case 0x004E: printf("Add?");                                              break;
+    case 0x0059: printf("Cleanup?");                                          break;
     case 0x0081: printf("Trampoline");        nargs = 1;                      break;
     case 0x0082: printf("JumpMap");           nargs = p[i+1] * 2 + 2;         break;
     case 0x0087: printf("DoCommand?");        nargs = 2;                      break;

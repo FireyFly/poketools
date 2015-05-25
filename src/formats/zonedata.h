@@ -14,7 +14,7 @@ struct zone_header {
   u32 code2_offset;
   u32 file_size;
   u32 file_size2;
-  u8  unk3[0x38];
+  u16 unk3[0x1C];
 } __attribute__((packed));
 
 // unk1 section
@@ -24,6 +24,8 @@ struct zone_unk1_header {
   u8  num_unk2;
   u8  num_unk3;
   u8  num_unk4;
+  u8  num_unk5;
+  u8  pad[3];
 } __attribute__((packed));
 
 struct zone_unk1_entry_1 {
@@ -54,7 +56,8 @@ struct zone_unk1 {
   struct zone_unk1_entry_3 *entry3;
   int nentry4;
   struct zone_unk1_entry_4 *entry4;
-  u32 trailer;
+  int nentry5;
+  struct zone_unk1_entry_4 *entry5;
 };
 
 struct zonedata {
