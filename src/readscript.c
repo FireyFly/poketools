@@ -55,7 +55,7 @@ int main(int argc, char *argv[]) {
   //-- Print code (or debug if only debug info)
   switch ((code != NULL) << 1 | (debug != NULL)) {
     case 3: print_debug_code(code, debug); break;
-    case 2: print_code(code); break;
+    case 2: disassemble(code); break;
     case 1: print_debug(debug); break;
     default:
       fprintf(stderr, "No blocks read!\n");

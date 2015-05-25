@@ -8,6 +8,9 @@
 #include "hexdump.h"
 #include "formats/script.h"
 
+#define FMT_FUNC    "\x1B[38;5;221m"
+#define FMT_LABEL   "\x1B[38;5;168m"
+#define FMT_UNKNOWN "\x1B[31m"
 #define FMT_COMMENT "\x1B[38;5;243m"
 #define FMT_END     "\x1B[m"
 
@@ -69,7 +72,7 @@ void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
 
   printf(FMT_END);
   switch (vl) { // These are all super WIP
-    case 0x002E: printf("Func Begin");                                        break;
+    case 0x002E: printf("Begin");                                        break;
     case 0x0030: printf("Return\n");                                          break;
     case 0x0031: printf("Call");              nargs = 1; lookup_var = 0x0009;
                                               var = i*4 + (int) p[i+1];       break;
@@ -111,14 +114,6 @@ void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
 
 /** Prints the given code section `code` to stdout. */
 void print_code(struct code_block *code) {
-  struct code_header hd_code;
-  memcpy(&hd_code, code->header, sizeof(struct code_header));
-
-//printf("------ \x1B[1mCode\x1B[m ------\n");
-//printf("Unknowns: %04x %04x %08x %08x %08x %08x\n",
-//       hd_code.unk1, hd_code.unk2, hd_code.extracted_size, hd_code.unk4,
-//       hd_code.unk5, hd_code.unk6);
-
   for (int i = 0; i < code->ninstrs; i++) {
     u32 v  = code->instrs[i];
     u16 vh = v >> 16,
@@ -132,14 +127,12 @@ void print_code(struct code_block *code) {
 
 /** Prints the given debug section `debug` to stdout. */
 void print_debug(struct debug_block *debug) {
-  struct debug_header hd_debug;
-  memcpy(&hd_debug, debug->header, sizeof(struct debug_header));
+  struct debug_header *hd = debug->header;
 
   printf("\n------ \x1B[1mDebug\x1B[m ------\n");
   printf("  #unk1: %2d   #files: %2d   #linenos: %2d   #symbols: %2d   #types: %2d\n",
-         hd_debug.count_unk1, hd_debug.count_files, hd_debug.count_linenos,
-         hd_debug.count_symbols, hd_debug.count_types);
-  printf("  Unknowns: %08x\n", hd_debug.unk1);
+         hd->count_unk1, hd->count_files, hd->count_linenos, hd->count_symbols, hd->count_types);
+  printf("  Unknowns: %08x\n", hd->unk1);
 
   // Files
   printf("\nFiles:\n");
@@ -262,4 +255,255 @@ void print_debug_code(struct code_block *code, struct debug_block *debug) {
     print_instruction_comment(code->instrs, i, debug);
     printf("\n");
   }
+}
+
+
+//-- New disassembler implementation --------------------------------
+struct instr {
+  i32 op;
+  i32 high_half;
+  int uses_high_half;
+  int nargs;
+  u32 *args;
+};
+int decode(struct instr *instr, u32 *code) {
+  u32 v  = *code;
+  u16 vh = v >> 16,
+      vl = v & 0xFFFF;
+
+  *instr = (struct instr) {
+    .op             = vl,
+    .high_half      = vh,
+    .uses_high_half = 0,
+    .nargs          = 0,
+    .args           = code + 1,
+  };
+
+  switch (vl) {
+    case 0x002E:                                    break; // Begin
+    case 0x0030:                                    break; // Return
+    case 0x0031: instr->nargs = 1;                  break; // Call
+    case 0x0033: instr->nargs = 1;                  break; // Jump
+    case 0x0035: instr->nargs = 1;                  break; // CondJump
+    case 0x0036: instr->nargs = 1;                  break; // CondJump2
+    case 0x004E:                                    break; // Add?
+    case 0x0059:                                    break; // Cleanup?
+    case 0x0081: instr->nargs = 1;                  break; // Trampoline
+    case 0x0082: instr->nargs = 2*code[1] + 2;      break; // JumpMap
+    case 0x0087: instr->nargs = 2;                  break; // DoCommand?
+    case 0x0089:                                    break; // LineNo
+    case 0x00A2: instr->uses_high_half = 1;         break; // GetGlobal2
+    case 0x00A3: instr->uses_high_half = 1;         break; // GetGlobal
+    case 0x00A4: instr->uses_high_half = 1;         break; // GetLocal
+    case 0x00AF: instr->uses_high_half = 1;         break; // SetGlobal
+    case 0x00B1: instr->uses_high_half = 1;         break; // SetLocal?
+    case 0x00BC: instr->uses_high_half = 1;         break; // PushConst
+    case 0x00BE: instr->uses_high_half = 1;         break; // PushCmdLocal?
+    case 0x00BF: instr->uses_high_half = 1;         break; // ResetLocal
+    case 0x00C8: instr->uses_high_half = 1;         break; // CmpLocal
+    case 0x00C9: instr->uses_high_half = 1;         break; // CmpConst
+    default:
+      instr->op = -1;
+  }
+
+  return instr->op != -1;
+}
+
+void disasm_assign_labels_(u32 *labels, struct code_block *code) {
+  u32 *ins = code->instrs;
+  int n = code->ninstrs;
+
+  // First mark all targets for jump instructions
+  struct instr instr;
+  for (int i = 0; i < n; i += instr.nargs + 1) {
+    decode(&instr, &ins[i]);
+
+    switch (instr.op) {
+      case 0x002E: { // Begin
+        labels[i] = -1;
+      } break;
+
+      case 0x0031: case 0x0033: case 0x0035: case 0x0036: { // Jumps
+        u32 target = i + (int) ins[i + 1]/4;
+        if (target < n && labels[target] == 0) labels[target] = 1;
+      } break;
+
+      case 0x0081: { // Trampoline
+        u32 target = i + (int) ins[i + 1]/4;
+        if (target < n) labels[target] = 1;
+      } break;
+
+      case 0x0082: { // JumpMaps
+        labels[i] = 1;
+        int choices = ins[i + 1];
+        u32 target;
+
+        #define SAFE_LOOKUP(target, idx) { \
+          if (!(0 < idx && idx < n)) break; \
+          target = (idx) + (int) ins[idx]/4 - 1; \
+        }
+
+        for (int j = 0; j < choices; j++) {
+          SAFE_LOOKUP(target, i + 2 + 2*j);
+          if (target < n && labels[target] == 0) labels[target] = 1;
+        }
+        SAFE_LOOKUP(target, i + 2 + 2*choices);
+        if (target < n && labels[target] == 0) labels[target] = 1;
+
+        #undef SAFE_LOOKUP
+      } break;
+    }
+  }
+
+  // Then, compute proper label indices within each function
+  u32 counter = 0;
+  for (int i = 0; i < n; i++) {
+    switch (labels[i]) {
+      case -1: counter = 0;           break; // Begin: function label
+      case  1: labels[i] = ++counter; break; // Local label
+    }
+  }
+}
+
+char label_buf[BUFSIZ];
+char *disasm_lookup_label_(u32 *labels, int i) {
+  switch (labels[i]) {
+    case -1:
+      sprintf(label_buf, "%sFunc_%04x%s", FMT_FUNC, i * 4, FMT_END);
+      break;
+    case 0:
+      label_buf[0] = 0;
+      break;
+    default:
+      sprintf(label_buf, "%s.l%d%s", FMT_LABEL, labels[i], FMT_END);
+  }
+  return label_buf;
+}
+
+void print_column(const char *str, int w) {
+  int n = 0;
+  for (const char *p = str; *p; p++) {
+    if (*p == '\x1B') {
+      while (*p != 'm' && *p) p++;
+      n--;
+    }
+    n++;
+  }
+
+//printf("[%d %d]", w, n);
+
+  #define max(a,b) ((a) > (b)? (a) : (b))
+  if (w > 0) printf("%*s%s", max(0, w - n), "", str);
+  else       printf("%s%*s", str, max(0, (-w) - n), "");
+}
+
+void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels) {
+  char *label = disasm_lookup_label_(labels, i);
+  if (n == 0) label[0] = 0; // This line doesn't really count
+
+  if (labels[i] == -1) {
+    printf("\n%s:\n", label);
+    label[0] = 0;
+  }
+
+  if (label[0]) strcat(label, ":");
+
+//  ..________..######################################;__####: xxxxxxxx xxxxxxxx
+// "  .l1:      Call Func_00a4                        ;  0004: 00000031 000000a0
+  printf("  ");
+  print_column(label, -8);
+  printf("  ");
+  print_column(str, -37);
+  printf(" %s;", FMT_COMMENT);
+
+  if (n > 0) {
+    printf("%3x%03x:", (4*i) >> 12, (4*i) & 0xFFF);
+    for (int j = 0; j < n; j++) {
+      int v = ins[i + j];
+      u16 hi = v >> 16,
+          lo = v & 0xFFFF;
+      printf(" %s%04hx%s%04hx%s", format_of(hi), hi, format_of(lo), lo, FMT_END);
+    }
+  }
+  printf("%s\n", FMT_END);
+}
+
+/** Disassembles the given code section `code` and prints to stdout. */
+void disassemble(struct code_block *code) {
+  // TODO: Add support for debugging info to the disassembler
+  u32 *ins = code->instrs;
+  int n = code->ninstrs;
+
+  u32 *labels = calloc(n, sizeof(u32));
+  disasm_assign_labels_(labels, code);
+
+  //-- Disassemble each instruction
+  struct instr instr;
+  for (int i = 0; i < n; i += instr.nargs + 1) {
+    decode(&instr, &ins[i]);
+
+    int nargs = instr.nargs;
+    u16 vh = instr.high_half;
+
+    char buf[BUFSIZ];
+    buf[0] = 0;
+
+    #define RLABEL(offset, j) disasm_lookup_label_(labels, (offset) + (int) ins[j]/4)
+
+    switch (instr.op) {
+      case 0x002E: sprintf(buf, "Begin");                           break;
+      case 0x0030: sprintf(buf, "Return");                          break;
+      case 0x0031: sprintf(buf, "Call %s",       RLABEL(i, i + 1)); break;
+      case 0x0033: sprintf(buf, "Jump %s",       RLABEL(i, i + 1)); break;
+      case 0x0035: sprintf(buf, "CondJump %s",   RLABEL(i, i + 1)); break;
+      case 0x0036: sprintf(buf, "CondJump2 %s",  RLABEL(i, i + 1)); break;
+      case 0x004E: sprintf(buf, "Add?");                            break;
+      case 0x0059: sprintf(buf, "Cleanup?");                        break;
+      case 0x0081: sprintf(buf, "Trampoline %s", RLABEL(i, i + 1)); break;
+
+      case 0x0082: { // JumpMaps
+        disasm_line_(ins, i, 2, "JumpMap {", labels);
+        int choices = ins[i + 1],
+            base;
+        // Print each choice
+        for (int j = 0; j < choices; j++) {
+          base = i + 2 + 2*j;
+          sprintf(buf, "  %3d => %s", ins[base + 1], RLABEL(base - 1, base));
+          disasm_line_(ins, base, 2, buf, labels);
+        }
+        // Print the fallback choice
+        base = i + 2 + 2*choices;
+        sprintf(buf, "  %3c => %s", '*', RLABEL(base - 1, base));
+        disasm_line_(ins, base, 1, buf, labels);
+        disasm_line_(ins, base + 1, 0, "}", labels);
+        // Suppress standard printing
+        buf[0] = 0;
+      } break;
+
+      case 0x0087: sprintf(buf, "DoCommand? %d, %d", ins[i + 1], ins[i + 2]); break;
+      case 0x0089: sprintf(buf, "LineNo");                          break;
+      case 0x00A2: sprintf(buf, "GetGlobal2 $%04hx",    vh);        break;
+      case 0x00A3: sprintf(buf, "GetGlobal $%04hx",     vh);        break;
+      case 0x00A4: sprintf(buf, "GetLocal $%04hx",      vh);        break;
+      case 0x00AF: sprintf(buf, "SetGlobal $%04hx",     vh);        break;
+      case 0x00B1: sprintf(buf, "SetLocal? $%04hx",     vh);        break;
+      case 0x00BC: sprintf(buf, "PushConst %hd",        vh);        break;
+      case 0x00BE: sprintf(buf, "PushCmdLocal? $%04hx", vh);        break;
+      case 0x00BF: sprintf(buf, "ResetLocal $%04hx",    vh);        break;
+      case 0x00C8: sprintf(buf, "CmpLocal $%04hx",      vh);        break;
+      case 0x00C9: sprintf(buf, "CmpConst $%04hx",      vh);        break;
+
+      default:
+        sprintf(buf, "%s$%04hx%s", FMT_UNKNOWN, (u16) (ins[i] & 0xFFFF), FMT_END);
+    }
+
+    // Print the line for this instruction
+    if (buf[0] != 0) {
+      disasm_line_(ins, i, instr.nargs + 1, buf, labels);
+    }
+
+    #undef LABEL
+  }
+
+  free(labels);
 }

@@ -13,4 +13,7 @@ void print_debug(struct debug_block *debug);
  *  `debug` as aid for pretty-printing. */
 void print_debug_code(struct code_block *code, struct debug_block *debug);
 
+/** Disassembles the given code section `code` and prints to stdout. */
+void disassemble(struct code_block *code);
+
 #endif
