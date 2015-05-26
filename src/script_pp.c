@@ -9,6 +9,8 @@
 #include "formats/script.h"
 
 #define FMT_FUNC    "\x1B[38;5;221m"
+#define FMT_LOCAL   "\x1B[38;5;139m"
+#define FMT_GLOBAL  "\x1B[38;5;150m"
 #define FMT_LABEL   "\x1B[38;5;168m"
 #define FMT_UNKNOWN "\x1B[31m"
 #define FMT_COMMENT "\x1B[38;5;243m"
@@ -373,17 +375,43 @@ void disasm_assign_labels_(u32 *labels, struct code_block *code) {
   }
 }
 
+
+char identifier_buf[BUFSIZ];
+char *disasm_lookup_identifier_(struct debug_block *debug, u32 id, u32 type, int i) {
+  const char *fmt = type == 0x101? FMT_LOCAL : FMT_GLOBAL;
+
+  const struct debug_symbol *sym = NULL;
+  if (debug != NULL) sym = lookup_sym(debug, id, type, i);
+
+  if (sym != NULL) {
+    sprintf(identifier_buf, "%s%s%s", fmt, sym->name, FMT_END);
+  } else {
+    sprintf(identifier_buf, "%s$%04hx%s", fmt, (u16) (id & 0xFFFF), FMT_END);
+  }
+  return identifier_buf;
+}
+
 char label_buf[BUFSIZ];
-char *disasm_lookup_label_(u32 *labels, int i) {
+char *disasm_lookup_label_(struct debug_block *debug, u32 *labels, int i) {
   switch (labels[i]) {
-    case -1:
-      sprintf(label_buf, "%sFunc_%04x%s", FMT_FUNC, i * 4, FMT_END);
-      break;
-    case 0:
+    case -1: {
+      const struct debug_symbol *sym = NULL;
+      if (debug != NULL) sym = lookup_sym(debug, i*4, 0x0009, 0);
+
+      if (sym != NULL) {
+        sprintf(label_buf, "%s%s%s", FMT_FUNC, sym->name, FMT_END);
+      } else {
+        sprintf(label_buf, "%sFunc_%04x%s", FMT_FUNC, i * 4, FMT_END);
+      }
+    } break;
+
+    case 0: {
       label_buf[0] = 0;
-      break;
-    default:
+    } break;
+
+    default: {
       sprintf(label_buf, "%s.l%d%s", FMT_LABEL, labels[i], FMT_END);
+    }
   }
   return label_buf;
 }
@@ -405,8 +433,8 @@ void print_column(const char *str, int w) {
   else       printf("%s%*s", str, max(0, (-w) - n), "");
 }
 
-void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels) {
-  char *label = disasm_lookup_label_(labels, i);
+void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels, struct debug_block *debug) {
+  char *label = disasm_lookup_label_(debug, labels, i);
   if (n == 0) label[0] = 0; // This line doesn't really count
 
   if (labels[i] == -1) {
@@ -416,8 +444,8 @@ void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels) {
 
   if (label[0]) strcat(label, ":");
 
-//  ..________..######################################;__####: xxxxxxxx xxxxxxxx
-// "  .l1:      Call Func_00a4                        ;  0004: 00000031 000000a0
+  //  ..________..######################################;__####: xxxxxxxx xxxxxxxx
+  // "  .l1:      Call Func_00a4                        ;  0004: 00000031 000000a0
   printf("  ");
   print_column(label, -8);
   printf("  ");
@@ -456,7 +484,11 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
     char buf[BUFSIZ];
     buf[0] = 0;
 
-    #define RLABEL(offset, j) disasm_lookup_label_(labels, (offset) + (int) ins[j]/4)
+    #define RLABEL(offset, j) disasm_lookup_label_(debug, labels, (offset) + (int) ins[j]/4)
+    #define ID(id, type) disasm_lookup_identifier_(debug, (i16) (id), (type), i)
+    #define GLOBAL(id) ID(id, 0x0001)
+    #define FUNC(id)   ID(id, 0x0009)
+    #define LOCAL(id)  ID(id, 0x0101)
 
     switch (instr.op) {
       case 0x0027: sprintf(buf, "PushConst $%x", ins[i + 1]);       break;
@@ -473,7 +505,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
       case 0x0081: sprintf(buf, "Trampoline %s", RLABEL(i, i + 1)); break;
 
       case 0x0082: { // JumpMaps
-        disasm_line_(ins, i, 2, "JumpMap {", labels);
+        disasm_line_(ins, i, 2, "JumpMap {", labels, debug);
         int choices = ins[i + 1],
             base;
         // Print each choice
@@ -482,7 +514,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
           base = i + 2 + 2*j;
           if (base + (int) ins[base]/4 - 1 >= n) break;
           sprintf(buf, "  %3d => %s", ins[base + 1], RLABEL(base - 1, base));
-          disasm_line_(ins, base, 2, buf, labels);
+          disasm_line_(ins, base, 2, buf, labels, debug);
         }
         if (j != choices) { // Check for broken instruction
           instr.nargs = 0;
@@ -491,28 +523,28 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
         // Print the fallback choice
         base = i + 2 + 2*choices;
         sprintf(buf, "  %3c => %s", '*', RLABEL(base - 1, base));
-        disasm_line_(ins, base, 1, buf, labels);
-        disasm_line_(ins, base + 1, 0, "}", labels);
+        disasm_line_(ins, base, 1, buf, labels, debug);
+        disasm_line_(ins, base + 1, 0, "}", labels, debug);
         // Suppress standard printing
         buf[0] = 0;
       } break;
 
       case 0x0087: sprintf(buf, "DoCommand? %d (%d args)", ins[i + 1], ins[i + 2] / 4); break;
-      case 0x0089: sprintf(buf, "LineNo");                          break;
+      case 0x0089: sprintf(buf, "LineNo");                           break;
       case 0x009B: sprintf(buf, "Copy $%04hx, $%04hx", (u16) ins[i + 1], (u16) ins[i + 2]); break;
-      case 0x00A2: sprintf(buf, "GetGlobal2 $%04hx",    vh);        break;
-      case 0x00A3: sprintf(buf, "GetGlobal $%04hx",     vh);        break;
-      case 0x00A4: sprintf(buf, "GetLocal $%04hx",      vh);        break;
-      case 0x00AB: sprintf(buf, "PushTrue");       assert(vh == 1); break;
-      case 0x00AF: sprintf(buf, "SetGlobal $%04hx",     vh);        break;
-      case 0x00B1: sprintf(buf, "SetLocal? $%04hx",     vh);        break;
-      case 0x00BC: sprintf(buf, "PushConst %d",   (i16) vh);        break;
-      case 0x00BE: sprintf(buf, "GetArg $%04hx",        vh);        break;
-      case 0x00BF: sprintf(buf, "AdjustStack %+hd",     vh);        break;
-      case 0x00C8: sprintf(buf, "CmpLocal $%04hx",      vh);        break;
-      case 0x00C9: sprintf(buf, "CmpConst $%04hx",      vh);        break;
-      case 0x00D2: sprintf(buf, "Script Begin");                    break;
-      case 0xFFFF: sprintf(buf, "Script End");                      break;
+      case 0x00A2: sprintf(buf, "GetGlobal2 %s",    GLOBAL(vh));     break;
+      case 0x00A3: sprintf(buf, "GetGlobal %s",     GLOBAL(vh));     break;
+      case 0x00A4: sprintf(buf, "GetLocal %s",       LOCAL(vh));     break;
+      case 0x00AB: sprintf(buf, "PushConst2 %d",           vh );     break;
+      case 0x00AF: sprintf(buf, "SetGlobal %s",     GLOBAL(vh));     break;
+      case 0x00B1: sprintf(buf, "SetLocal? %s",      LOCAL(vh));     break;
+      case 0x00BC: sprintf(buf, "PushConst %d",      (i16) vh );     break;
+      case 0x00BE: sprintf(buf, "GetArg %s",         LOCAL(vh));     break;
+      case 0x00BF: sprintf(buf, "AdjustStack %+hd",        vh );     break;
+      case 0x00C8: sprintf(buf, "CmpLocal %s",       LOCAL(vh));     break;
+      case 0x00C9: sprintf(buf, "CmpConst $%04hx",         vh );     break;
+      case 0x00D2: sprintf(buf, "Script Begin");                     break;
+      case 0xFFFF: sprintf(buf, "Script End");                       break;
 
       default:
         sprintf(buf, "%s$%04hx%s", FMT_UNKNOWN, (u16) (ins[i] & 0xFFFF), FMT_END);
@@ -520,10 +552,14 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
 
     // Print the line for this instruction
     if (buf[0] != 0) {
-      disasm_line_(ins, i, instr.nargs + 1, buf, labels);
+      disasm_line_(ins, i, instr.nargs + 1, buf, labels, debug);
     }
 
     #undef LABEL
+    #undef ID
+    #undef GLOBAL
+    #undef FUNC
+    #undef LOCAL
   }
 
   free(labels);
