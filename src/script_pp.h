@@ -14,6 +14,6 @@ void print_debug(struct debug_block *debug);
 void print_debug_code(struct code_block *code, struct debug_block *debug);
 
 /** Disassembles the given code section `code` and prints to stdout. */
-void disassemble(struct code_block *code);
+void disassemble(struct code_block *code, struct debug_block *debug);
 
 #endif

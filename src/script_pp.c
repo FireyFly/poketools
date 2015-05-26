@@ -280,21 +280,26 @@ int decode(struct instr *instr, u32 *code) {
   };
 
   switch (vl) {
+    case 0x0027: instr->nargs = 1;                  break; // PushConst
     case 0x002E:                                    break; // Begin
     case 0x0030:                                    break; // Return
     case 0x0031: instr->nargs = 1;                  break; // Call
     case 0x0033: instr->nargs = 1;                  break; // Jump
-    case 0x0035: instr->nargs = 1;                  break; // CondJump
-    case 0x0036: instr->nargs = 1;                  break; // CondJump2
+    case 0x0035: instr->nargs = 1;                  break; // JumpNE
+    case 0x0036: instr->nargs = 1;                  break; // JumpEq
+    case 0x0040: instr->nargs = 1;                  break; // Jump??
     case 0x004E:                                    break; // Add?
-    case 0x0059:                                    break; // Cleanup?
+    case 0x0051:                                    break; // Cmp?
+    case 0x0059:                                    break; // PushFalse
     case 0x0081: instr->nargs = 1;                  break; // Trampoline
     case 0x0082: instr->nargs = 2*code[1] + 2;      break; // JumpMap
     case 0x0087: instr->nargs = 2;                  break; // DoCommand?
     case 0x0089:                                    break; // LineNo
+    case 0x009B: instr->nargs = 2;                  break; // Copy
     case 0x00A2: instr->uses_high_half = 1;         break; // GetGlobal2
     case 0x00A3: instr->uses_high_half = 1;         break; // GetGlobal
     case 0x00A4: instr->uses_high_half = 1;         break; // GetLocal
+    case 0x00AB: instr->uses_high_half = 1;         break; // PushTrue
     case 0x00AF: instr->uses_high_half = 1;         break; // SetGlobal
     case 0x00B1: instr->uses_high_half = 1;         break; // SetLocal?
     case 0x00BC: instr->uses_high_half = 1;         break; // PushConst
@@ -302,6 +307,8 @@ int decode(struct instr *instr, u32 *code) {
     case 0x00BF: instr->uses_high_half = 1;         break; // ResetLocal
     case 0x00C8: instr->uses_high_half = 1;         break; // CmpLocal
     case 0x00C9: instr->uses_high_half = 1;         break; // CmpConst
+    case 0x00D2:                                    break; // Script Begin
+    case 0xFFFF:                                    break; // Script End
     default:
       instr->op = -1;
   }
@@ -323,7 +330,8 @@ void disasm_assign_labels_(u32 *labels, struct code_block *code) {
         labels[i] = -1;
       } break;
 
-      case 0x0031: case 0x0033: case 0x0035: case 0x0036: { // Jumps
+      case 0x0031: case 0x0033: case 0x0035: case 0x0036: case 0x0040:
+      case 0x005A: { // Jumps
         u32 target = i + (int) ins[i + 1]/4;
         if (target < n && labels[target] == 0) labels[target] = 1;
       } break;
@@ -429,7 +437,7 @@ void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels) {
 }
 
 /** Disassembles the given code section `code` and prints to stdout. */
-void disassemble(struct code_block *code) {
+void disassemble(struct code_block *code, struct debug_block *debug) {
   // TODO: Add support for debugging info to the disassembler
   u32 *ins = code->instrs;
   int n = code->ninstrs;
@@ -451,14 +459,17 @@ void disassemble(struct code_block *code) {
     #define RLABEL(offset, j) disasm_lookup_label_(labels, (offset) + (int) ins[j]/4)
 
     switch (instr.op) {
+      case 0x0027: sprintf(buf, "PushConst $%x", ins[i + 1]);       break;
       case 0x002E: sprintf(buf, "Begin");                           break;
       case 0x0030: sprintf(buf, "Return");                          break;
       case 0x0031: sprintf(buf, "Call %s",       RLABEL(i, i + 1)); break;
       case 0x0033: sprintf(buf, "Jump %s",       RLABEL(i, i + 1)); break;
-      case 0x0035: sprintf(buf, "CondJump %s",   RLABEL(i, i + 1)); break;
-      case 0x0036: sprintf(buf, "CondJump2 %s",  RLABEL(i, i + 1)); break;
+      case 0x0035: sprintf(buf, "JumpNE %s",     RLABEL(i, i + 1)); break;
+      case 0x0036: sprintf(buf, "JumpEq %s",     RLABEL(i, i + 1)); break;
+      case 0x0040: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
       case 0x004E: sprintf(buf, "Add?");                            break;
-      case 0x0059: sprintf(buf, "Cleanup?");                        break;
+      case 0x0051: sprintf(buf, "Cmp?");                            break;
+      case 0x0059: sprintf(buf, "PushFalse");                       break;
       case 0x0081: sprintf(buf, "Trampoline %s", RLABEL(i, i + 1)); break;
 
       case 0x0082: { // JumpMaps
@@ -486,18 +497,22 @@ void disassemble(struct code_block *code) {
         buf[0] = 0;
       } break;
 
-      case 0x0087: sprintf(buf, "DoCommand? %d, %d", ins[i + 1], ins[i + 2]); break;
+      case 0x0087: sprintf(buf, "DoCommand? %d (%d args)", ins[i + 1], ins[i + 2] / 4); break;
       case 0x0089: sprintf(buf, "LineNo");                          break;
+      case 0x009B: sprintf(buf, "Copy $%04hx, $%04hx", (u16) ins[i + 1], (u16) ins[i + 2]); break;
       case 0x00A2: sprintf(buf, "GetGlobal2 $%04hx",    vh);        break;
       case 0x00A3: sprintf(buf, "GetGlobal $%04hx",     vh);        break;
       case 0x00A4: sprintf(buf, "GetLocal $%04hx",      vh);        break;
+      case 0x00AB: sprintf(buf, "PushTrue");       assert(vh == 1); break;
       case 0x00AF: sprintf(buf, "SetGlobal $%04hx",     vh);        break;
       case 0x00B1: sprintf(buf, "SetLocal? $%04hx",     vh);        break;
-      case 0x00BC: sprintf(buf, "PushConst %hd",        vh);        break;
-      case 0x00BE: sprintf(buf, "PushCmdLocal? $%04hx", vh);        break;
-      case 0x00BF: sprintf(buf, "ResetLocal $%04hx",    vh);        break;
+      case 0x00BC: sprintf(buf, "PushConst %d",   (i16) vh);        break;
+      case 0x00BE: sprintf(buf, "GetArg $%04hx",        vh);        break;
+      case 0x00BF: sprintf(buf, "AdjustStack %+hd",     vh);        break;
       case 0x00C8: sprintf(buf, "CmpLocal $%04hx",      vh);        break;
       case 0x00C9: sprintf(buf, "CmpConst $%04hx",      vh);        break;
+      case 0x00D2: sprintf(buf, "Script Begin");                    break;
+      case 0xFFFF: sprintf(buf, "Script End");                      break;
 
       default:
         sprintf(buf, "%s$%04hx%s", FMT_UNKNOWN, (u16) (ins[i] & 0xFFFF), FMT_END);

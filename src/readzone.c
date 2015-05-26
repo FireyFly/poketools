@@ -75,10 +75,10 @@ int main(int argc, char *argv[]) {
   //-- Print code sections ------------
   printf("===> \x1B[1mcode1\x1B[m <===\n");
 //print_code(zone->code1);
-  disassemble(zone->code1);
+  disassemble(zone->code1, NULL);
   printf("\n");
 
   printf("===> \x1B[1mcode2\x1B[m <===\n");
-  disassemble(zone->code2);
+  disassemble(zone->code2, NULL);
 //print_code(zone->code2);
 }
