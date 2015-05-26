@@ -287,8 +287,14 @@ int decode(struct instr *instr, u32 *code) {
     case 0x0030:                                    break; // Return
     case 0x0031: instr->nargs = 1;                  break; // Call
     case 0x0033: instr->nargs = 1;                  break; // Jump
+    // Why in the world does this cause issues??
+ // case 0x0034: instr->nargs = 1;                  break; // Jump??
     case 0x0035: instr->nargs = 1;                  break; // JumpNE
     case 0x0036: instr->nargs = 1;                  break; // JumpEq
+    case 0x0037: instr->nargs = 1;                  break; // Jump??
+    case 0x0038: instr->nargs = 1;                  break; // Jump??
+    case 0x003D: instr->nargs = 1;                  break; // Jump??
+    case 0x003E: instr->nargs = 1;                  break; // Jump??
     case 0x0040: instr->nargs = 1;                  break; // Jump??
     case 0x004E:                                    break; // Add?
     case 0x0051:                                    break; // Cmp?
@@ -302,6 +308,7 @@ int decode(struct instr *instr, u32 *code) {
     case 0x00A3: instr->uses_high_half = 1;         break; // GetGlobal
     case 0x00A4: instr->uses_high_half = 1;         break; // GetLocal
     case 0x00AB: instr->uses_high_half = 1;         break; // PushTrue
+    case 0x00AC: instr->uses_high_half = 1;         break; // CmpConst2
     case 0x00AF: instr->uses_high_half = 1;         break; // SetGlobal
     case 0x00B1: instr->uses_high_half = 1;         break; // SetLocal?
     case 0x00BC: instr->uses_high_half = 1;         break; // PushConst
@@ -332,8 +339,10 @@ void disasm_assign_labels_(u32 *labels, struct code_block *code) {
         labels[i] = -1;
       } break;
 
-      case 0x0031: case 0x0033: case 0x0035: case 0x0036: case 0x0040:
-      case 0x005A: { // Jumps
+      case 0x0031: case 0x0033: case 0x0034: case 0x0035: case 0x0036:
+      case 0x0037: case 0x0038:
+      case 0x003D: case 0x003E:
+      case 0x0040: case 0x005A: { // Jumps
         u32 target = i + (int) ins[i + 1]/4;
         if (target < n && labels[target] == 0) labels[target] = 1;
       } break;
@@ -496,8 +505,13 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
       case 0x0030: sprintf(buf, "Return");                          break;
       case 0x0031: sprintf(buf, "Call %s",       RLABEL(i, i + 1)); break;
       case 0x0033: sprintf(buf, "Jump %s",       RLABEL(i, i + 1)); break;
+      case 0x0034: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
       case 0x0035: sprintf(buf, "JumpNE %s",     RLABEL(i, i + 1)); break;
       case 0x0036: sprintf(buf, "JumpEq %s",     RLABEL(i, i + 1)); break;
+      case 0x0037: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
+      case 0x0038: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
+      case 0x003D: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
+      case 0x003E: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
       case 0x0040: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
       case 0x004E: sprintf(buf, "Add?");                            break;
       case 0x0051: sprintf(buf, "Cmp?");                            break;
@@ -536,6 +550,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
       case 0x00A3: sprintf(buf, "GetGlobal %s",     GLOBAL(vh));     break;
       case 0x00A4: sprintf(buf, "GetLocal %s",       LOCAL(vh));     break;
       case 0x00AB: sprintf(buf, "PushConst2 %d",           vh );     break;
+      case 0x00AC: sprintf(buf, "CmpConst2 $%04hx",        vh );     break;
       case 0x00AF: sprintf(buf, "SetGlobal %s",     GLOBAL(vh));     break;
       case 0x00B1: sprintf(buf, "SetLocal? %s",      LOCAL(vh));     break;
       case 0x00BC: sprintf(buf, "PushConst %d",      (i16) vh );     break;
