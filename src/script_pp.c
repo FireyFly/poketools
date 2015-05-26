@@ -381,7 +381,7 @@ char *disasm_lookup_identifier_(struct debug_block *debug, u32 id, u32 type, int
   const char *fmt = type == 0x101? FMT_LOCAL : FMT_GLOBAL;
 
   const struct debug_symbol *sym = NULL;
-  if (debug != NULL) sym = lookup_sym(debug, id, type, i);
+  if (debug != NULL) sym = lookup_sym(debug, id, type, i * 4);
 
   if (sym != NULL) {
     sprintf(identifier_buf, "%s%s%s", fmt, sym->name, FMT_END);
@@ -506,14 +506,15 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
 
       case 0x0082: { // JumpMaps
         disasm_line_(ins, i, 2, "JumpMap {", labels, debug);
-        int choices = ins[i + 1],
+        int choices  = ins[i + 1],
+            fallback = ins[i + 2],
             base;
         // Print each choice
         int j;
         for (j = 0; j < choices; j++) {
-          base = i + 2 + 2*j;
+          base = i + 3 + 2*j;
           if (base + (int) ins[base]/4 - 1 >= n) break;
-          sprintf(buf, "  %3d => %s", ins[base + 1], RLABEL(base - 1, base));
+          sprintf(buf, "  %3d => %s", ins[base], RLABEL(base, base + 1));
           disasm_line_(ins, base, 2, buf, labels, debug);
         }
         if (j != choices) { // Check for broken instruction
@@ -521,8 +522,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
           break;
         }
         // Print the fallback choice
-        base = i + 2 + 2*choices;
-        sprintf(buf, "  %3c => %s", '*', RLABEL(base - 1, base));
+        sprintf(buf, "  %3c => %s", '*', RLABEL(i + 1, i + 2));
         disasm_line_(ins, base, 1, buf, labels, debug);
         disasm_line_(ins, base + 1, 0, "}", labels, debug);
         // Suppress standard printing
