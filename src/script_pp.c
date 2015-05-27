@@ -312,12 +312,12 @@ int decode(struct instr *instr, u32 *code) {
     case 0x00AF: instr->uses_high_half = 1;         break; // SetGlobal
     case 0x00B1: instr->uses_high_half = 1;         break; // SetLocal?
     case 0x00BC: instr->uses_high_half = 1;         break; // PushConst
-    case 0x00BE: instr->uses_high_half = 1;         break; // PushCmdLocal?
+    case 0x00BD: instr->uses_high_half = 1;         break; // GetGlobal3
+    case 0x00BE: instr->uses_high_half = 1;         break; // GetArg
     case 0x00BF: instr->uses_high_half = 1;         break; // ResetLocal
     case 0x00C8: instr->uses_high_half = 1;         break; // CmpLocal
     case 0x00C9: instr->uses_high_half = 1;         break; // CmpConst
     case 0x00D2:                                    break; // Script Begin
-    case 0xFFFF:                                    break; // Script End
     default:
       instr->op = -1;
   }
@@ -475,7 +475,23 @@ void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels, struct d
 
 /** Disassembles the given code section `code` and prints to stdout. */
 void disassemble(struct code_block *code, struct debug_block *debug) {
-  // TODO: Add support for debugging info to the disassembler
+  // TODO: This is just temporary
+  struct code_header *hd = code->header;
+  printf("[Code block] section_size=%x  magic=%08x\n",
+         hd->section_size, hd->magic);
+  printf("  unk1=%04x  unk2=%04x  header_size=%04x\n",
+         hd->unk1, hd->unk2, hd->header_size);
+  printf("  extracted_size=%08x  extracted_code_size=%08x  unk4=%08x  unk6=%08x\n",
+         hd->extracted_size, hd->extracted_code_size, hd->unk4, hd->unk6);
+  printf("\n");
+  for (int i = 0; i < code->nextra; i += 2) {
+    u32 a = code->extra[i],
+        b = code->extra[i + 1];
+    printf("  %s%08x%s %s%08x%s\n", format_of(a), a, FMT_END, format_of(b), b, FMT_END);
+  }
+  printf("\n");
+
+  // Disassembler proper
   u32 *ins = code->instrs;
   int n = code->ninstrs;
 
@@ -554,12 +570,12 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
       case 0x00AF: sprintf(buf, "SetGlobal %s",     GLOBAL(vh));     break;
       case 0x00B1: sprintf(buf, "SetLocal? %s",      LOCAL(vh));     break;
       case 0x00BC: sprintf(buf, "PushConst %d",      (i16) vh );     break;
+      case 0x00BD: sprintf(buf, "GetGlobal3 %s",    GLOBAL(vh));     break;
       case 0x00BE: sprintf(buf, "GetArg %s",         LOCAL(vh));     break;
       case 0x00BF: sprintf(buf, "AdjustStack %+hd",        vh );     break;
       case 0x00C8: sprintf(buf, "CmpLocal %s",       LOCAL(vh));     break;
       case 0x00C9: sprintf(buf, "CmpConst $%04hx",         vh );     break;
       case 0x00D2: sprintf(buf, "Script Begin");                     break;
-      case 0xFFFF: sprintf(buf, "Script End");                       break;
 
       default:
         sprintf(buf, "%s$%04hx%s", FMT_UNKNOWN, (u16) (ins[i] & 0xFFFF), FMT_END);
@@ -577,5 +593,13 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
     #undef LOCAL
   }
 
+  //-- Movement
+  printf("\n");
+  for (int i = 0; i < code->nmovement; i++) {
+    u32 v = code->movement[i];
+    printf("  %s%08x%s\n", format_of(v), v, FMT_END);
+  }
+
+  // Cleanup
   free(labels);
 }

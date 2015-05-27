@@ -6,7 +6,7 @@
 #define FMT_END "\x1B[m"
 
 /** SGR string to format the byte `v`. */
-const char *format_of(int v) {
+const char *format_of(u32 v) {
   return v ==  0x00? "\x1B[38;5;238m"
        : v ==  0xFF? "\x1B[38;5;167m"
        : v <   0x20? "\x1B[38;5;150m"

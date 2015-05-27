@@ -13,17 +13,21 @@ struct code_header {
   u32 magic; // 0x0A0AF1E0
   u16 unk1;
   u16 unk2;
-  u32 header_size; // 0x60
-  u32 unk4;
+  u32 header_size;
+  u32 extracted_code_size;
   u32 extracted_size;
-  u32 unk5;
+  u32 unk4;
   u32 unk6;
 } __attribute__((packed));
 
 struct code_block {
   struct code_header *header;
+  int nextra;
+  u32 *extra;
   int ninstrs;
   u32 *instrs;
+  int nmovement;
+  u32 *movement;
 };
 
 

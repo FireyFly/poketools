@@ -43,24 +43,31 @@ struct code_block *read_code_block(FILE *f) {
   fread(&hd_code, sizeof(struct code_header), 1, f);
   assert(hd_code.magic == 0x0A0AF1E0);
 
+  // Read "extra"/unknown bytes
+  int nextra = (hd_code.header_size - 0x20) / sizeof(u32);
+  u32 *extra = malloc(nextra * sizeof(u32));
+  fread(extra, sizeof(u32), nextra, f);
+
   //-- Read code
   fseek(f, section_start + hd_code.header_size, SEEK_SET);
   long code_start = ftell(f);
 
-  int code_length = (hd_code.extracted_size - hd_code.header_size) / sizeof(u32);
+  // Extract
+  int extracted_length = (hd_code.extracted_size - hd_code.header_size) / sizeof(u32),
+      code_length      = (hd_code.extracted_code_size - hd_code.header_size) / sizeof(u32);
 
-  u32 *code = malloc(code_length * sizeof(u32));
+  u32 *extracted = malloc(extracted_length * sizeof(u32));
 
   // Read & decompress the instructions
   u32 i = 0, j = 0, x = 0;
-  while (i < code_length) {
+  while (i < extracted_length) {
     int byte = fgetc(f),
         v = byte & 0x7F,
         final = (byte & 0x80) == 0;
     if (++j == 1) x = SEXT(v, 6);
     else x = x << 7 | v;
     if (final) {
-      code[i++] = x;
+      extracted[i++] = x;
       j = 0;
     }
   }
@@ -68,8 +75,12 @@ struct code_block *read_code_block(FILE *f) {
   //-- Return section struct
   struct code_block *res = malloc(sizeof(struct code_block));
   res->header = memdup(&hd_code, sizeof(struct code_header));
+  res->nextra = nextra;
+  res->extra = extra;
   res->ninstrs = code_length;
-  res->instrs = code;
+  res->instrs = extracted;
+  res->nmovement = extracted_length - code_length;
+  res->movement = extracted + code_length;
 
   return res;
 }
