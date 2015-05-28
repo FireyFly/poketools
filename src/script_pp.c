@@ -456,14 +456,16 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
 
       case 0x0082: { // JumpMaps
         disasm_line_(ins, i, 2, "JumpMap {", labels, debug, lineno);
-        int choices  = ins[i + 1],
-            fallback = ins[i + 2],
+        int choices = ins[i + 1],
             base;
+        // Print the fallback choice
+        sprintf(buf, "  %3c => %s", '*', RLABEL(i + 1, i + 2));
+        disasm_line_(ins, i + 2, 1, buf, labels, debug, -1);
         // Print each choice
         int j;
         for (j = 0; j < choices; j++) {
           base = i + 3 + 2*j;
-          if (base + (int) ins[base]/4 - 1 >= n) break;
+          if (base + (int) ins[base + 1]/4 - 1 >= n) break;
           sprintf(buf, "  %3d => %s", ins[base], RLABEL(base, base + 1));
           disasm_line_(ins, base, 2, buf, labels, debug, -1);
         }
@@ -471,10 +473,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
           instr.nargs = 0;
           break;
         }
-        // Print the fallback choice
-        sprintf(buf, "  %3c => %s", '*', RLABEL(i + 1, i + 2));
-        disasm_line_(ins, base, 1, buf, labels, debug, -1);
-        disasm_line_(ins, base + 1, 0, "}", labels, debug, -1);
+        disasm_line_(ins, i + 3 + 2*choices, 0, "}", labels, debug, -1);
         // Suppress standard printing
         buf[0] = 0;
       } break;
