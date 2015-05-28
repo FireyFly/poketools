@@ -282,7 +282,17 @@ int decode(struct instr *instr, u32 *code) {
   };
 
   switch (vl) {
+    case 0x0009: instr->uses_high_half = 1;         break;
+    case 0x000B: instr->nargs = 1;                  break;
+    case 0x000C: instr->nargs = 1;                  break;
+    case 0x000E: instr->nargs = 1;                  break;
+    case 0x0017: instr->uses_high_half = 1;         break;
+    case 0x0020: instr->uses_high_half = 1;         break;
+    case 0x0022: instr->uses_high_half = 1;         break;
+    case 0x0024: instr->uses_high_half = 1;         break;
+    case 0x0025: instr->uses_high_half = 1;         break;
     case 0x0027: instr->nargs = 1;                  break; // PushConst
+    case 0x002B: instr->uses_high_half = 1;         break;
     case 0x002E:                                    break; // Begin
     case 0x0030:                                    break; // Return
     case 0x0031: instr->nargs = 1;                  break; // Call
@@ -299,24 +309,36 @@ int decode(struct instr *instr, u32 *code) {
     case 0x004E:                                    break; // Add?
     case 0x0051:                                    break; // Cmp?
     case 0x0059:                                    break; // PushFalse
+    case 0x0069: instr->nargs = 1;                  break;
     case 0x0081: instr->nargs = 1;                  break; // Trampoline
     case 0x0082: instr->nargs = 2*code[1] + 2;      break; // JumpMap
     case 0x0087: instr->nargs = 2;                  break; // DoCommand?
     case 0x0089:                                    break; // LineNo
+    case 0x008A: instr->nargs = 2;                  break;
+    case 0x008E: instr->nargs = 3;                  break;
+    case 0x0096: instr->nargs = 5;                  break;
     case 0x009B: instr->nargs = 2;                  break; // Copy
+    case 0x009D: instr->nargs = 2;                  break;
     case 0x00A2: instr->uses_high_half = 1;         break; // GetGlobal2
     case 0x00A3: instr->uses_high_half = 1;         break; // GetGlobal
     case 0x00A4: instr->uses_high_half = 1;         break; // GetLocal
     case 0x00AB: instr->uses_high_half = 1;         break; // PushTrue
     case 0x00AC: instr->uses_high_half = 1;         break; // CmpConst2
+    case 0x00AE: instr->uses_high_half = 1;         break;
     case 0x00AF: instr->uses_high_half = 1;         break; // SetGlobal
     case 0x00B1: instr->uses_high_half = 1;         break; // SetLocal?
+    case 0x00B8: instr->uses_high_half = 1;         break;
+    case 0x00B9: instr->uses_high_half = 1;         break;
     case 0x00BC: instr->uses_high_half = 1;         break; // PushConst
     case 0x00BD: instr->uses_high_half = 1;         break; // GetGlobal3
     case 0x00BE: instr->uses_high_half = 1;         break; // GetArg
     case 0x00BF: instr->uses_high_half = 1;         break; // ResetLocal
+    case 0x00C5: instr->uses_high_half = 1;         break;
+    case 0x00C6: instr->uses_high_half = 1;         break;
     case 0x00C8: instr->uses_high_half = 1;         break; // CmpLocal
     case 0x00C9: instr->uses_high_half = 1;         break; // CmpConst
+    case 0x00CC: instr->uses_high_half = 1;         break;
+    case 0x00D4: instr->uses_high_half = 1;         break;
     case 0x00D2:                                    break; // Script Begin
     default:
       instr->op = -1;
@@ -516,7 +538,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
     #define LOCAL(id)  ID(id, 0x0101)
 
     switch (instr.op) {
-      case 0x0027: sprintf(buf, "PushConst $%x", ins[i + 1]);       break;
+      case 0x0027: sprintf(buf, "CPushConst $%x", ins[i + 1]);      break;
       case 0x002E: sprintf(buf, "Begin");                           break;
       case 0x0030: sprintf(buf, "Return");                          break;
       case 0x0031: sprintf(buf, "Call %s",       RLABEL(i, i + 1)); break;
@@ -531,7 +553,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
       case 0x0040: sprintf(buf, "Jump?? %s",     RLABEL(i, i + 1)); break;
       case 0x004E: sprintf(buf, "Add?");                            break;
       case 0x0051: sprintf(buf, "Cmp?");                            break;
-      case 0x0059: sprintf(buf, "PushFalse");                       break;
+      case 0x0059: sprintf(buf, "DPushFalse");                      break;
       case 0x0081: sprintf(buf, "Trampoline %s", RLABEL(i, i + 1)); break;
 
       case 0x0082: { // JumpMaps
@@ -561,18 +583,27 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
 
       case 0x0087: sprintf(buf, "DoCommand? %d (%d args)", ins[i + 1], ins[i + 2] / 4); break;
       case 0x0089: sprintf(buf, "LineNo");                           break;
-      case 0x009B: sprintf(buf, "Copy $%04hx, $%04hx", (u16) ins[i + 1], (u16) ins[i + 2]); break;
-      case 0x00A2: sprintf(buf, "GetGlobal2 %s",    GLOBAL(vh));     break;
-      case 0x00A3: sprintf(buf, "GetGlobal %s",     GLOBAL(vh));     break;
-      case 0x00A4: sprintf(buf, "GetLocal %s",       LOCAL(vh));     break;
-      case 0x00AB: sprintf(buf, "PushConst2 %d",           vh );     break;
+
+      case 0x008A: case 0x008E: case 0x0096: {
+        sprintf(buf, "$%02X", instr.op);
+        for (int i = 0; i < instr.nargs; i++) {
+          sprintf(buf + strlen(buf), " %f,", *((float *) &instr.args[i]));
+        }
+        buf[strlen(buf) - 1] = 0;
+      } break;
+
+      case 0x009B: sprintf(buf, "$9B $%04hx, $%04hx", (u16) ins[i + 1], (u16) ins[i + 2]); break;
+      case 0x00A2: sprintf(buf, "TGetGlobal2 %s",   GLOBAL(vh));     break;
+      case 0x00A3: sprintf(buf, "DGetGlobal %s",    GLOBAL(vh));     break;
+      case 0x00A4: sprintf(buf, "DGetLocal %s",      LOCAL(vh));     break;
+      case 0x00AB: sprintf(buf, "DPushConst %d",           vh );     break;
       case 0x00AC: sprintf(buf, "CmpConst2 $%04hx",        vh );     break;
-      case 0x00AF: sprintf(buf, "SetGlobal %s",     GLOBAL(vh));     break;
-      case 0x00B1: sprintf(buf, "SetLocal? %s",      LOCAL(vh));     break;
-      case 0x00BC: sprintf(buf, "PushConst %d",      (i16) vh );     break;
-      case 0x00BD: sprintf(buf, "GetGlobal3 %s",    GLOBAL(vh));     break;
-      case 0x00BE: sprintf(buf, "GetArg %s",         LOCAL(vh));     break;
-      case 0x00BF: sprintf(buf, "AdjustStack %+hd",        vh );     break;
+      case 0x00AF: sprintf(buf, "DSetGlobal %s",    GLOBAL(vh));     break;
+      case 0x00B1: sprintf(buf, "DSetLocal %s",      LOCAL(vh));     break;
+      case 0x00BC: sprintf(buf, "CPushConst %d",     (i16) vh );     break;
+      case 0x00BD: sprintf(buf, "CGetGlobal %s",    GLOBAL(vh));     break;
+      case 0x00BE: sprintf(buf, "CGetLocal %s",      LOCAL(vh));     break;
+      case 0x00BF: sprintf(buf, "CAdjustStack %+hd",       vh );     break;
       case 0x00C8: sprintf(buf, "CmpLocal %s",       LOCAL(vh));     break;
       case 0x00C9: sprintf(buf, "CmpConst $%04hx",         vh );     break;
       case 0x00D2: sprintf(buf, "Script Begin");                     break;
