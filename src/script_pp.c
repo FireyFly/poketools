@@ -75,34 +75,37 @@ int decode(struct instr *instr, u32 *code) {
   };
 
   switch (vl) {
-    case 0x0009: instr->uses_high_half = 1;         break;
-    case 0x000B: instr->nargs = 1;                  break;
-    case 0x000C: instr->nargs = 1;                  break;
-    case 0x000E: instr->nargs = 1;                  break;
-    case 0x0017: instr->uses_high_half = 1;         break;
-    case 0x0020: instr->uses_high_half = 1;         break;
-    case 0x0022: instr->uses_high_half = 1;         break;
-    case 0x0024: instr->uses_high_half = 1;         break;
-    case 0x0025: instr->uses_high_half = 1;         break;
-    case 0x0027: instr->nargs = 1;                  break; // PushConst
-    case 0x002B: instr->uses_high_half = 1;         break;
+    case 0x0009:                                    break;
+    case 0x000B: instr->nargs = 1;                  break; //   Often $b0029
+    case 0x000C:                                    break;
+    case 0x000E:                                    break;
+    case 0x0017:                                    break;
+    case 0x0020:                                    break;
+    case 0x0022:                                    break;
+    case 0x0024:                                    break;
+ // case 0x0025: instr->uses_high_half = 1;         break; //   Happens in no zonefiles
+    case 0x0027: instr->nargs = 1;                  break; // PushConst -- looks like operand is either u32, 2×u16 or float
+    case 0x002B:                                    break;
     case 0x002E:                                    break; // Begin
     case 0x0030:                                    break; // Return
     case 0x0031: instr->nargs = 1;                  break; // Call
     case 0x0033: instr->nargs = 1;                  break; // Jump
-    // Why in the world does this cause issues??
  // case 0x0034: instr->nargs = 1;                  break; // Jump??
-    case 0x0035: instr->nargs = 1;                  break; // JumpNE
-    case 0x0036: instr->nargs = 1;                  break; // JumpEq
-    case 0x0037: instr->nargs = 1;                  break; // Jump??
-    case 0x0038: instr->nargs = 1;                  break; // Jump??
-    case 0x003D: instr->nargs = 1;                  break; // Jump??
-    case 0x003E: instr->nargs = 1;                  break; // Jump??
-    case 0x0040: instr->nargs = 1;                  break; // Jump??
+    case 0x0035: instr->nargs = 1;                  break; // JumpNE -- only ever forward
+    case 0x0036: instr->nargs = 1;                  break; // JumpEq -- only ever forward
+    case 0x0037: instr->nargs = 1;                  break; // Jump?? -- very frequently $20; occasionally high (~$100, $200, $300); only ever forward
+    case 0x0038: instr->nargs = 1;                  break; // Jump?? -- only ever forward
+    case 0x003D: instr->nargs = 1;                  break; // Jump?? -- only ever forward; often $10
+    case 0x003E: instr->nargs = 1;                  break; // Jump?? -- only ever forward
+    case 0x003F: instr->nargs = 1;                  break; // Jump?? -- only ever forward
+    case 0x0040: instr->nargs = 1;                  break; // Jump?? -- only ever forward; often fairly high
     case 0x004E:                                    break; // Add?
     case 0x0051:                                    break; // Cmp?
     case 0x0059:                                    break; // PushFalse
-    case 0x0069: instr->nargs = 1;                  break;
+    case 0x0069: instr->nargs = 1;                  break; //   Only ever invoked with $ffff or very rarely $fff3 as the operand
+    case 0x0075: instr->nargs = 1;                  break; //   Only ever invoked with fairly low, int-aligned operand
+    case 0x0077: instr->nargs = 1;                  break; //   -||-
+    case 0x0078: instr->nargs = 1;                  break; //   Only ever invoked with $0c as the operand
     case 0x0081: instr->nargs = 1;                  break; // Trampoline
     case 0x0082: instr->nargs = 2*code[1] + 2;      break; // JumpMap
     case 0x0087: instr->nargs = 2;                  break; // DoCommand?
@@ -110,28 +113,28 @@ int decode(struct instr *instr, u32 *code) {
     case 0x008A: instr->nargs = 2;                  break;
     case 0x008E: instr->nargs = 3;                  break;
     case 0x0096: instr->nargs = 5;                  break;
-    case 0x009B: instr->nargs = 2;                  break; // Copy
-    case 0x009D: instr->nargs = 2;                  break;
+    case 0x009B: instr->nargs = 2;                  break; // Copy? -- both operands are small, positive or negative, int-aligned
+    case 0x009D: instr->nargs = 2;                  break; //   Low negative int-aligned, relatively low occasionally with high word as $0005
     case 0x00A2: instr->uses_high_half = 1;         break; // GetGlobal2
     case 0x00A3: instr->uses_high_half = 1;         break; // GetGlobal
     case 0x00A4: instr->uses_high_half = 1;         break; // GetLocal
     case 0x00AB: instr->uses_high_half = 1;         break; // PushTrue
     case 0x00AC: instr->uses_high_half = 1;         break; // CmpConst2
-    case 0x00AE: instr->uses_high_half = 1;         break;
+ // case 0x00AE: instr->uses_high_half = 1;         break; //            -- never used in zonefile
     case 0x00AF: instr->uses_high_half = 1;         break; // SetGlobal
     case 0x00B1: instr->uses_high_half = 1;         break; // SetLocal?
-    case 0x00B8: instr->uses_high_half = 1;         break;
-    case 0x00B9: instr->uses_high_half = 1;         break;
+    case 0x00B8: instr->uses_high_half = 1;         break; //   Only ever used with $02 as the operand
+    case 0x00B9: instr->uses_high_half = 1;         break; //   Only ever used with $02 as the operand
     case 0x00BC: instr->uses_high_half = 1;         break; // PushConst
     case 0x00BD: instr->uses_high_half = 1;         break; // GetGlobal3
     case 0x00BE: instr->uses_high_half = 1;         break; // GetArg
     case 0x00BF: instr->uses_high_half = 1;         break; // ResetLocal
-    case 0x00C5: instr->uses_high_half = 1;         break;
-    case 0x00C6: instr->uses_high_half = 1;         break;
-    case 0x00C8: instr->uses_high_half = 1;         break; // CmpLocal
+    case 0x00C5: instr->uses_high_half = 1;         break; //   Non-aligned, often small, always positive operand
+    case 0x00C6: instr->uses_high_half = 1;         break; //   Non-aligned, always small, always positive operand
+ // case 0x00C8: instr->uses_high_half = 1;         break; // CmpLocal   -- never used in zonefile
     case 0x00C9: instr->uses_high_half = 1;         break; // CmpConst
-    case 0x00CC: instr->uses_high_half = 1;         break;
-    case 0x00D4: instr->uses_high_half = 1;         break;
+ // case 0x00CC: instr->uses_high_half = 1;         break; //            -- never used in zonefile
+ // case 0x00D4: instr->uses_high_half = 1;         break; //            -- never used in zonefile
     case 0x00D2:                                    break; // Script Begin
     default:
       instr->op = -1;
