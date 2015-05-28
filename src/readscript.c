@@ -54,8 +54,8 @@ int main(int argc, char *argv[]) {
 
   //-- Print code (or debug if only debug info)
   switch ((code != NULL) << 1 | (debug != NULL)) {
- // case 3: print_debug_code(code, debug); break;
-    case 3: print_debug(debug); putchar('\n'); disassemble(code, debug); break;
+ // case 3: print_debug(debug); putchar('\n'); disassemble(code, debug); break;
+    case 3: disassemble(code, debug); break;
     case 2: disassemble(code, NULL); break;
     case 1: print_debug(debug); break;
     default:

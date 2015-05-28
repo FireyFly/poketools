@@ -16,117 +16,6 @@
 #define FMT_COMMENT "\x1B[38;5;243m"
 #define FMT_END     "\x1B[m"
 
-/** Prints a (comment) line explaining an instruction operand. */
-void print_argument_comment(u16 op, u32 *p, int i, int j, int n, struct debug_block *debug) {
-  #define CODE_DELTA(d) ((i - 1)*4 + (int)(d))
-  #define PRINT_CODE_DELTA(d) printf("%+4d words (= %04x)", (int)(d)/4, CODE_DELTA(d));
-  u32 v = p[i];
-
-  switch (op) {
-    case 0x0031: // Relative jumps of various kinds
-    case 0x0033:
-    case 0x0035:
-    case 0x0036:
-    case 0x0081:
-      printf("  "); PRINT_CODE_DELTA(v);
-      break;
-
-    case 0x0082: { // JumpMap
-      static int result;
-      if (j == 0) {
-        printf("  cases = %d", v);
-      } else if (j == n - 1 && j % 2 == 1) {
-        printf("  else => "); PRINT_CODE_DELTA(v);
-      } else if (j % 2 == 1) {
-        result = v;
-      } else {
-        printf("  %4d => ", v); PRINT_CODE_DELTA(result - 4);
-      }
-    } break;
-
-    default:
-      printf("  <?>");
-  }
-
-  #undef PRINT_CODE_DELTA
-  #undef CODE_DELTA
-}
-
-/** Prints a (comment) line explaining an instruction. */
-void print_instruction_comment(u32 *p, int i, struct debug_block *debug) {
-  u32 v  = p[i];
-  u16 vh = v >> 16,
-      vl = v & 0xFFFF;
-
-  static u16 curr_op, curr_nargs = 0, curr_remaining = 0;
-
-  printf(FMT_COMMENT "  ; ");
-  if (curr_remaining > 0) {
-    print_argument_comment(curr_op, p, i, curr_nargs - curr_remaining, curr_nargs, debug);
-    curr_remaining--;
-    printf(FMT_END);
-    return;
-  }
-
-  int nargs      =  0,            // #operand ints that follow this instruction
-      lookup_var = -1,            // If not -1, lookup a variable of this type and append
-      var        = SEXT(vh, 15);  // Variable to lookup (default: high halfword)
-
-  printf(FMT_END);
-  switch (vl) { // These are all super WIP
-    case 0x002E: printf("Begin");                                        break;
-    case 0x0030: printf("Return\n");                                          break;
-    case 0x0031: printf("Call");              nargs = 1; lookup_var = 0x0009;
-                                              var = i*4 + (int) p[i+1];       break;
-    case 0x0033: printf("Jump");              nargs = 1;                      break;
-    case 0x0035: printf("CondJump");          nargs = 1;                      break;
-    case 0x0036: printf("CondJump2");         nargs = 1;                      break;
-    case 0x004E: printf("Add?");                                              break;
-    case 0x0059: printf("Cleanup?");                                          break;
-    case 0x0081: printf("Trampoline");        nargs = 1;                      break;
-    case 0x0082: printf("JumpMap");           nargs = p[i+1] * 2 + 2;         break;
-    case 0x0087: printf("DoCommand?");        nargs = 2;                      break;
-    case 0x0089: printf("LineNo");                                            break;
-    case 0x00A2: printf("GetGlobal2 %04hx", vh);         lookup_var = 0x0001; break;
-    case 0x00A3: printf("GetGlobal %04hx", vh);          lookup_var = 0x0001; break;
-    case 0x00A4: printf("GetLocal %04hx", vh);           lookup_var = 0x0101; break;
-    case 0x00AF: printf("SetGlobal %04hx", vh);          lookup_var = 0x0001; break;
-    case 0x00B1: printf("SetLocal? %04hx", vh);          lookup_var = 0x0101; break;
-    case 0x00BC: printf("PushConst %6hd", vh);                                break;
-    case 0x00BE: printf("PushCmdLocal? %04hx", vh);      lookup_var = 0x0101; break;
-    case 0x00BF: printf("ResetLocal %04hx", vh);         lookup_var = 0x0101; break;
-    case 0x00C8: printf("CmpLocal %04hx", vh);           lookup_var = 0x0101; break;
-    case 0x00C9: printf("CmpConst %04hx", vh);                                break;
-  }
-  printf(FMT_COMMENT);
-
-  if (nargs > 0) {
-    curr_op = vl;
-    curr_nargs = nargs;
-    curr_remaining = nargs;
-  }
-
-  if (lookup_var != -1 && debug != NULL) {
-    const struct debug_symbol *sym = lookup_sym(debug, var, lookup_var, i*4);
-    printf(" (%s)", sym == NULL? "N/A" : sym->name);
-  }
-
-  printf(FMT_END);
-}
-
-/** Prints the given code section `code` to stdout. */
-void print_code(struct code_block *code) {
-  for (int i = 0; i < code->ninstrs; i++) {
-    u32 v  = code->instrs[i];
-    u16 vh = v >> 16,
-        vl = v & 0xFFFF;
-    printf("  %04x: %s%04hx%s%04hx" FMT_END,
-           i * 4, format_of(vh), vh, format_of(vl), vl);
-    print_instruction_comment(code->instrs, i, NULL);
-    printf("\n");
-  }
-}
-
 /** Prints the given debug section `debug` to stdout. */
 void print_debug(struct debug_block *debug) {
   struct debug_header *hd = debug->header;
@@ -145,10 +34,6 @@ void print_debug(struct debug_block *debug) {
 
   // LineNos
   printf("\nLineNos: (%d linenos)\n", debug->nlinenos);
-//for (int i = 0; i < debug->nlinenos; i++) {
-//  struct debug_raw_lineno *lineno = &debug->linenos[i];
-//  printf("  [%08x] %d\n", lineno->start, lineno->lineno);
-//}
 
   // Symbols
   printf("\nSymbols:\n");
@@ -164,98 +49,6 @@ void print_debug(struct debug_block *debug) {
   for (int i = 0; i < debug->ntypes; i++) {
     struct debug_type *type = &debug->types[i];
     printf("%4d %s\n", type->id, type->name);
-  }
-}
-
-/** Prints the given code section `code` to stdout, using debug info from
- *  `debug` as aid for pretty-printing. */
-void print_debug_code(struct code_block *code, struct debug_block *debug) {
-  // Create a sorted copy of the symbol table
-  int sym_bytes = sizeof(struct debug_symbol) * debug->nsymbols;
-  struct debug_symbol *symbols = malloc(sym_bytes);
-  memcpy(symbols, debug->symbols, sym_bytes);
-  qsort(symbols, debug->nsymbols, sizeof(struct debug_symbol), symbols_comparator);
-
-  // Extract the globals, functions and locals from the symbol table.
-  struct debug_symbol *sym_globals, *sym_functions, *sym_locals;
-  int nglobals, nfunctions, nlocals;
-
-  int k = 0;
-  while (k < debug->nsymbols && symbols[k].type == 0x0001) k++;
-  nglobals = k;
-  while (k < debug->nsymbols && symbols[k].type == 0x0009) k++;
-  nfunctions = k - nglobals;
-  while (k < debug->nsymbols && symbols[k].type == 0x0101) k++;
-  nlocals = k - nfunctions - nglobals;
-
-  assert(nglobals + nfunctions + nlocals == debug->nsymbols);
-
-  sym_globals = symbols;
-  sym_functions = symbols + nglobals;
-  sym_locals = symbols + nglobals + nfunctions;
-
-  int file_i     = 0,
-      line_i     = 0,
-      global_i   = 0,
-      function_i = 0,
-      local_i    = 0;
-
-  for (int i = 0; i < code->ninstrs; i++) {
-    // Print file header if new file
-    while (file_i < debug->nfiles && debug->files[file_i].start <= 4*i) {
-      printf(FMT_COMMENT "\n");
-      for (int i = 0; i < 74; i++) putchar(';');
-      putchar('\n');
-      printf(";;;; " FMT_END "%s" FMT_COMMENT " ",
-             debug->files[file_i].name);
-      int pad = 74 - (strlen(debug->files[file_i].name) + strlen(";;;;  "));
-      if (pad < 0) pad = 0;
-      for (int i = 0; i < pad; i++) putchar(';');
-      putchar('\n');
-      for (int i = 0; i < 74; i++) putchar(';');
-      printf("\n" FMT_END);
-      file_i++;
-    }
-
-    // Print lineno info if new lineno
-    while (line_i < debug->nlinenos && debug->linenos[line_i].start <= 4*i) {
-      printf(FMT_COMMENT "; LineNo: %d" FMT_END "\n",
-             debug->linenos[line_i].lineno);
-      line_i++;
-    }
-
-    // Print any new globals
-    while (global_i < nglobals && sym_globals[global_i].start <= 4*i) {
-      struct debug_symbol *sym = &sym_globals[global_i];
-      printf(FMT_COMMENT "; Global: (%04hx) %s" FMT_END "\n",
-             (u16) sym->id, sym->name);
-      global_i++;
-    }
-
-    // Print out function header if appropriate
-    while (function_i < nfunctions && sym_functions[function_i].start <= 4*i) {
-      printf("\n");
-      printf(FMT_COMMENT ";;;; %s" FMT_END "\n",
-             sym_functions[function_i].name);
-      function_i++;
-    }
-
-    // Print any new locals
-    while (local_i < nlocals && sym_locals[local_i].start <= 4*i) {
-      struct debug_symbol *sym = &sym_locals[local_i];
-      printf(FMT_COMMENT ";   Local: (%04hx) %s" FMT_END "\n",
-             (u16) sym->id, sym->name);
-      local_i++;
-    }
-
-    // Print the actual instruction
-    u32 v  = code->instrs[i];
-    u16 vh = v >> 16,
-        vl = v & 0xFFFF;
-    printf("  %04x: %s%04hx%s%04hx" FMT_END,
-           i * 4, format_of(vh), vh, format_of(vl), vl);
-    print_instruction_comment(code->instrs, i, debug);
-    printf("\n");
   }
 }
 
@@ -464,7 +257,8 @@ void print_column(const char *str, int w) {
   else       printf("%s%*s", str, max(0, (-w) - n), "");
 }
 
-void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels, struct debug_block *debug) {
+void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels,
+                  struct debug_block *debug, int lineno) {
   char *label = disasm_lookup_label_(debug, labels, i);
   if (n == 0) label[0] = 0; // This line doesn't really count
 
@@ -477,9 +271,12 @@ void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels, struct d
 
   //  ..________..######################################;__####: xxxxxxxx xxxxxxxx
   // "  .l1:      Call Func_00a4                        ;  0004: 00000031 000000a0
-  printf("  ");
+  if (lineno >= 0) {
+    printf("%-4d", lineno);
+  } else {
+    printf("    ");
+  }
   print_column(label, -8);
-  printf("  ");
   print_column(str, -37);
   printf(" %s;", FMT_COMMENT);
 
@@ -497,6 +294,58 @@ void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels, struct d
 
 /** Disassembles the given code section `code` and prints to stdout. */
 void disassemble(struct code_block *code, struct debug_block *debug) {
+  //-- Grab debugging symbols
+  struct debug_symbol *symbols;
+  struct debug_symbol *sym_globals, *sym_functions, *sym_locals;
+  int nglobals, nfunctions, nlocals, nfiles, nlinenos;
+
+  int file_i     = 0,
+      line_i     = 0,
+      global_i   = 0,
+      function_i = 0,
+      local_i    = 0;
+
+  if (debug != NULL) {
+    // Create a sorted copy of the symbol table
+    int sym_bytes = sizeof(struct debug_symbol) * debug->nsymbols;
+    symbols = malloc(sym_bytes);
+    memcpy(symbols, debug->symbols, sym_bytes);
+    qsort(symbols, debug->nsymbols, sizeof(struct debug_symbol), symbols_comparator);
+
+    // Extract the globals, functions and locals from the symbol table.
+    int k = 0;
+    while (k < debug->nsymbols && symbols[k].type == 0x0001) k++;
+    nglobals = k;
+    while (k < debug->nsymbols && symbols[k].type == 0x0009) k++;
+    nfunctions = k - nglobals;
+    while (k < debug->nsymbols && symbols[k].type == 0x0101) k++;
+    nlocals = k - nfunctions - nglobals;
+
+    assert(nglobals + nfunctions + nlocals == debug->nsymbols);
+
+    nfiles = debug->nfiles;
+    nlinenos = debug->nlinenos;
+
+    sym_globals = symbols;
+    sym_functions = symbols + nglobals;
+    sym_locals = symbols + nglobals + nfunctions;
+
+  } else {
+    // No debugging symbols
+    symbols = malloc(0);
+
+    sym_globals   = symbols;
+    sym_functions = symbols;
+    sym_locals    = symbols;
+
+    nglobals   = 0;
+    nfunctions = 0;
+    nlocals    = 0;
+    nfiles     = 0;
+    nlinenos   = 0;
+  }
+
+
   // TODO: This is just temporary
   struct code_header *hd = code->header;
   printf("[Code block] section_size=%x  magic=%08x\n",
@@ -513,17 +362,66 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
   }
   printf("\n");
 
-  // Disassembler proper
+  //-- Disassembler proper
   u32 *ins = code->instrs;
   int n = code->ninstrs;
 
   u32 *labels = calloc(n, sizeof(u32));
   disasm_assign_labels_(labels, code);
 
-  //-- Disassemble each instruction
+  // Disassemble each instruction
   struct instr instr;
   for (int i = 0; i < n; i += instr.nargs + 1) {
     decode(&instr, &ins[i]);
+
+    int lineno = -1;
+
+    // Print any new globals
+    while (global_i < nglobals && sym_globals[global_i].start <= 4*i) {
+      struct debug_symbol *sym = &sym_globals[global_i];
+      printf(FMT_COMMENT "; Global: (%04hx) %s" FMT_END "\n",
+             (u16) sym->id, sym->name);
+      global_i++;
+    }
+
+    // Print file header if new file
+    while (file_i < nfiles && debug->files[file_i].start <= 4*i) {
+      printf("\n%s", FMT_COMMENT);
+      for (int i = 0; i < 74; i++) putchar(';');
+      putchar('\n');
+      printf("%s;;;; %s%s%s ", FMT_COMMENT, FMT_END, debug->files[file_i].name, FMT_COMMENT);
+      int pad = 74 - (strlen(debug->files[file_i].name) + strlen(";;;;  "));
+      if (pad < 0) pad = 0;
+      for (int i = 0; i < pad; i++) putchar(';');
+      printf("\n%s", FMT_COMMENT);
+      for (int i = 0; i < 74; i++) putchar(';');
+      printf("\n%s", FMT_END);
+      file_i++;
+    }
+
+    // Print lineno info if new lineno
+    while (line_i < nlinenos && debug->linenos[line_i].start <= 4*i) {
+   // printf(FMT_COMMENT "; LineNo: %d" FMT_END "\n",
+   //        debug->linenos[line_i].lineno);
+      lineno = debug->linenos[line_i].lineno;
+      line_i++;
+    }
+
+    // Print out function header if appropriate
+ // while (function_i < nfunctions && sym_functions[function_i].start <= 4*i) {
+ //   printf("\n");
+ //   printf(FMT_COMMENT ";;;; %s" FMT_END "\n",
+ //          sym_functions[function_i].name);
+ //   function_i++;
+ // }
+
+    // Print any new locals
+ // while (local_i < nlocals && sym_locals[local_i].start <= 4*i) {
+ //   struct debug_symbol *sym = &sym_locals[local_i];
+ //   printf(FMT_COMMENT ";   Local: (%04hx) %s" FMT_END "\n",
+ //          (u16) sym->id, sym->name);
+ //   local_i++;
+ // }
 
     int nargs = instr.nargs;
     u16 vh = instr.high_half;
@@ -557,7 +455,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
       case 0x0081: sprintf(buf, "Trampoline %s", RLABEL(i, i + 1)); break;
 
       case 0x0082: { // JumpMaps
-        disasm_line_(ins, i, 2, "JumpMap {", labels, debug);
+        disasm_line_(ins, i, 2, "JumpMap {", labels, debug, lineno);
         int choices  = ins[i + 1],
             fallback = ins[i + 2],
             base;
@@ -567,7 +465,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
           base = i + 3 + 2*j;
           if (base + (int) ins[base]/4 - 1 >= n) break;
           sprintf(buf, "  %3d => %s", ins[base], RLABEL(base, base + 1));
-          disasm_line_(ins, base, 2, buf, labels, debug);
+          disasm_line_(ins, base, 2, buf, labels, debug, -1);
         }
         if (j != choices) { // Check for broken instruction
           instr.nargs = 0;
@@ -575,8 +473,8 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
         }
         // Print the fallback choice
         sprintf(buf, "  %3c => %s", '*', RLABEL(i + 1, i + 2));
-        disasm_line_(ins, base, 1, buf, labels, debug);
-        disasm_line_(ins, base + 1, 0, "}", labels, debug);
+        disasm_line_(ins, base, 1, buf, labels, debug, -1);
+        disasm_line_(ins, base + 1, 0, "}", labels, debug, -1);
         // Suppress standard printing
         buf[0] = 0;
       } break;
@@ -614,7 +512,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
 
     // Print the line for this instruction
     if (buf[0] != 0) {
-      disasm_line_(ins, i, instr.nargs + 1, buf, labels, debug);
+      disasm_line_(ins, i, instr.nargs + 1, buf, labels, debug, lineno);
     }
 
     #undef LABEL
@@ -632,5 +530,6 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
   }
 
   // Cleanup
+  free(symbols);
   free(labels);
 }
