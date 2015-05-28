@@ -78,7 +78,7 @@ int decode(struct instr *instr, u32 *code) {
     case 0x0009:                                    break;
     case 0x000B: instr->nargs = 1;                  break; //   Often $b0029
     case 0x000C:                                    break;
-    case 0x000E:                                    break;
+    case 0x000E: instr->nargs = 1;                  break; //   Always a fairly low, int-aligned negative value
     case 0x0017:                                    break;
     case 0x0020:                                    break;
     case 0x0022:                                    break;
