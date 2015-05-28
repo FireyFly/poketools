@@ -295,8 +295,27 @@ void disasm_line_(u32 *ins, int i, int n, const char *str, u32 *labels,
   printf("%s\n", FMT_END);
 }
 
+void disasm_extra_block_(const char *str, u32 *extras, u32 start, u32 end) {
+  u32 start_ = (start - 0x20) / 4,
+      end_   = (end   - 0x20) / 4;
+
+  printf("%s:", str);
+  for (int i = 0; i < 8 - strlen(str); i++) putchar(' ');
+  for (u32 i = start_; i < end_; i += 2) {
+    int a = extras[i],
+        b = extras[i + 1];
+    if (i != start_) printf(" %*s  ", 6, "");
+    printf(" %s%08x%s %s%08x%s\n", format_of(a), a, FMT_END,
+                                   format_of(b), b, FMT_END);
+  }
+  if (start == end) printf("\n");
+}
+
 /** Disassembles the given code section `code` and prints to stdout. */
 void disassemble(struct code_block *code, struct debug_block *debug) {
+  char buf[BUFSIZ];
+  buf[0] = 0;
+
   //-- Grab debugging symbols
   struct debug_symbol *symbols;
   struct debug_symbol *sym_globals, *sym_functions, *sym_locals;
@@ -358,12 +377,26 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
   printf("  extracted_size=%08x  extracted_code_size=%08x  unk4=%08x  unk6=%08x\n",
          hd->extracted_size, hd->extracted_code_size, hd->unk4, hd->unk6);
   printf("\n");
-  for (int i = 0; i < code->nextra; i += 2) {
-    u32 a = code->extra[i],
-        b = code->extra[i + 1];
-    printf("  %s%08x%s %s%08x%s\n", format_of(a), a, FMT_END, format_of(b), b, FMT_END);
-  }
+
+  u32 *offsets = code->extra;
+  assert(offsets[6] == (code->nextra - 1) * 4 + 0x20);
+
+  disasm_extra_block_("(unk0)",  code->extra, offsets[0], offsets[1]);
+  disasm_extra_block_("(unk1)",  code->extra, offsets[1], offsets[2]);
+  disasm_extra_block_("(unk2)",  code->extra, offsets[2], offsets[3]);
+  disasm_extra_block_("globals", code->extra, offsets[3], offsets[4]);
+  disasm_extra_block_("(unk4)",  code->extra, offsets[4], offsets[5]);
+  disasm_extra_block_("(unk5)",  code->extra, offsets[5], offsets[6]);
+  int v = code->extra[(offsets[6] - 0x20) / 4];
+  printf("(unk6):   %s%08x%s\n", format_of(v), v, FMT_END);
   printf("\n");
+
+//for (int i = 0; i < code->nextra; i += 2) {
+//  u32 a = code->extra[i],
+//      b = code->extra[i + 1];
+//  printf("  %s%08x%s %s%08x%s\n", format_of(a), a, FMT_END, format_of(b), b, FMT_END);
+//}
+//printf("\n");
 
   //-- Disassembler proper
   u32 *ins = code->instrs;
@@ -429,9 +462,6 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
     int nargs = instr.nargs;
     u16 vh = instr.high_half;
 
-    char buf[BUFSIZ];
-    buf[0] = 0;
-
     #define RLABEL(offset, j) disasm_lookup_label_(debug, labels, (offset) + (int) ins[j]/4)
     #define ID(id, type) disasm_lookup_identifier_(debug, (i16) (id), (type), i)
     #define GLOBAL(id) ID(id, 0x0001)
@@ -492,7 +522,7 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
         buf[strlen(buf) - 1] = 0;
       } break;
 
-      case 0x009B: sprintf(buf, "$9B $%04hx, $%04hx", (u16) ins[i + 1], (u16) ins[i + 2]); break;
+   // case 0x009B: sprintf(buf, "$9B $%04hx, $%04hx", (u16) ins[i + 1], (u16) ins[i + 2]); break;
       case 0x00A2: sprintf(buf, "TGetGlobal2 %s",   GLOBAL(vh));     break;
       case 0x00A3: sprintf(buf, "DGetGlobal %s",    GLOBAL(vh));     break;
       case 0x00A4: sprintf(buf, "DGetLocal %s",      LOCAL(vh));     break;
@@ -528,8 +558,13 @@ void disassemble(struct code_block *code, struct debug_block *debug) {
   printf("\n");
   for (int i = 0; i < code->nmovement; i++) {
     u32 v = code->movement[i];
-    printf("  %s%08x%s\n", format_of(v), v, FMT_END);
+    printf("  %s%08x%s", format_of(v), v, FMT_END);
+    if (i % 3 == 2) {
+      printf("                    %s;  %04x%s\n",
+             FMT_COMMENT, (code->ninstrs + i) * 4, FMT_END);
+    }
   }
+  printf("\n");
 
   // Cleanup
   free(symbols);
